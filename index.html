@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>タロット占い</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;500;700&family=Noto+Serif+JP:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="stars" id="stars"></div>
+<div class="container">
+  <header>
+    <div class="ornament"><span class="ornament-line"></span><span class="ornament-diamond"></span><span class="ornament-line"></span></div>
+    <h1>Tarot</h1>
+    <p class="subtitle">Divine the unknown</p>
+  </header>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="switchPanel('reading', this)">🃏 スプレッド占い</button>
+    <button class="nav-tab" onclick="switchPanel('daily', this)">☀️ 今日の1枚</button>
+    <button class="nav-tab" onclick="switchPanel('yesno', this)">⚖️ Yes/No占い</button>
+    <button class="nav-tab" onclick="switchPanel('gallery', this)">📖 カード一覧</button>
+  </div>
+
+  <div class="panel active" id="panel-reading">
+    <div class="spread-selector">
+      <button class="spread-btn active" data-spread="1" onclick="setSpread(1)">ワンオラクル</button>
+      <button class="spread-btn" data-spread="3" onclick="setSpread(3)">スリーカード</button>
+      <button class="spread-btn" data-spread="5" onclick="setSpread(5)">クロス（5枚）</button>
+      <button class="spread-btn" data-spread="10" onclick="setSpread(10)">ケルト十字</button>
+    </div>
+    <div class="birth-date-area">
+      <label>🌟 生年月日を入力すると占星術的な解釈が加わります（任意）</label>
+      <div class="birth-date-row">
+        <input type="date" id="birthDate" onchange="onBirthDateChange()">
+        <span class="astro-badge" id="astroBadge" style="display:none"></span>
+      </div>
+    </div>
+    <div class="question-area">
+      <label>心に浮かぶ問いを念じてください</label>
+      <input type="text" class="question-input" id="questionInput" placeholder="質問を入力（任意）">
+    </div>
+    <button class="draw-btn" id="drawBtn" onclick="drawCards()">カードを引く</button>
+    <div id="spreadArea"><div class="card-spread" id="cardSpread"></div></div>
+    <div class="result-section" id="resultSection"></div>
+  </div>
+
+  <div class="panel" id="panel-daily">
+    <div class="birth-date-area">
+      <label>🌟 生年月日を入力すると占星術的な解釈が加わります（任意）</label>
+      <div class="birth-date-row">
+        <input type="date" class="sync-birth" onchange="syncBirthDate(this)">
+        <span class="astro-badge astro-badge-sync" style="display:none"></span>
+      </div>
+    </div>
+    <div class="daily-card-display" id="dailyDisplay"></div>
+  </div>
+
+  <div class="panel" id="panel-yesno">
+    <div class="birth-date-area">
+      <label>🌟 生年月日を入力すると占星術的な解釈が加わります（任意）</label>
+      <div class="birth-date-row">
+        <input type="date" class="sync-birth" onchange="syncBirthDate(this)">
+        <span class="astro-badge astro-badge-sync" style="display:none"></span>
+      </div>
+    </div>
+    <div class="question-area">
+      <label>「はい」か「いいえ」で答えられる質問を入力してください</label>
+      <input type="text" class="question-input" id="yesnoInput" placeholder="例: 転職すべきですか？">
+    </div>
+    <button class="draw-btn" onclick="drawYesNo()">カードに尋ねる</button>
+    <div id="yesnoResult"></div>
+  </div>
+
+  <div class="panel" id="panel-gallery">
+    <div class="deck-filter" id="deckFilter">
+      <button class="filter-btn active" onclick="filterGallery('all', this)">すべて (78)</button>
+      <button class="filter-btn" onclick="filterGallery('major', this)">大アルカナ (22)</button>
+      <button class="filter-btn" onclick="filterGallery('wands', this)">ワンド (14)</button>
+      <button class="filter-btn" onclick="filterGallery('cups', this)">カップ (14)</button>
+      <button class="filter-btn" onclick="filterGallery('swords', this)">ソード (14)</button>
+      <button class="filter-btn" onclick="filterGallery('pentacles', this)">ペンタクル (14)</button>
+    </div>
+    <div class="gallery-grid" id="galleryGrid"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="cardModal"><div class="modal-content" id="modalContent"></div></div>
+<canvas id="exportCanvas"></canvas>
+
+<script src="script.js"></script>
+</body>
+</html>
