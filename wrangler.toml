@@ -1,4 +1,4 @@
-name = "tarot-python-jp"
+name = "tarot"
 main = "src/entry.py"
 compatibility_date = "2026-02-12"
 compatibility_flags = ["python_workers"]
