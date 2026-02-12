@@ -1,4 +1,4 @@
-# Python版 タロット + 占星術 API（日本語）
+# Python版 タロット + 占星術 API
 
 このディレクトリは、Cloudflare での公開を最終目的にした Python 実装です。
 
