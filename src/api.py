@@ -6,8 +6,12 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-from .astrology import astrology_profile
-from .tarot_engine import SPREAD_POSITIONS, TarotEngine
+try:
+    from .astrology import astrology_profile
+    from .tarot_engine import SPREAD_POSITIONS, TarotEngine
+except ImportError:
+    from astrology import astrology_profile
+    from tarot_engine import SPREAD_POSITIONS, TarotEngine
 
 
 class SpreadRequest(BaseModel):

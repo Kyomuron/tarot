@@ -3,7 +3,10 @@ from __future__ import annotations
 import asgi
 from workers import WorkerEntrypoint
 
-from .api import app
+try:
+    from .api import app
+except ImportError:
+    from api import app
 
 
 class Default(WorkerEntrypoint):

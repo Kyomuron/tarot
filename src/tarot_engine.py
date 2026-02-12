@@ -4,8 +4,12 @@ from datetime import date
 import random
 from typing import Any
 
-from .astrology import astrology_profile, daily_transit, moon_phase
-from .tarot_data import Card, build_deck
+try:
+    from .astrology import astrology_profile, daily_transit, moon_phase
+    from .tarot_data import Card, build_deck
+except ImportError:
+    from astrology import astrology_profile, daily_transit, moon_phase
+    from tarot_data import Card, build_deck
 
 
 SPREAD_POSITIONS: dict[str, list[str]] = {
