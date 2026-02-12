@@ -906,3 +906,264 @@ drawYesNo = function() {
 };
 
 createStars();
+
+// ============================================================
+// API BRIDGE (Python Worker)
+// ============================================================
+const DEFAULT_TAROT_API_BASE = 'https://tarot.mero-mero-merod.workers.dev';
+const TAROT_API_BASE = window.TAROT_API_BASE || (
+  window.location.protocol === 'file:' || !window.location.hostname.endsWith('workers.dev')
+    ? DEFAULT_TAROT_API_BASE
+    : ''
+);
+const spreadApiMap = { 1: 'one', 3: 'three', 5: 'five', 10: 'celtic_cross' };
+let lastSpreadSummary = '';
+
+function apiUrl(path) {
+  return TAROT_API_BASE ? `${TAROT_API_BASE}${path}` : path;
+}
+
+async function requestApi(path, options = {}) {
+  const init = { method: 'GET', headers: {}, ...options };
+  if (init.body && typeof init.body !== 'string') {
+    init.headers['Content-Type'] = 'application/json';
+    init.body = JSON.stringify(init.body);
+  }
+
+  const response = await fetch(apiUrl(path), init);
+  const raw = await response.text();
+  let data = {};
+
+  if (raw) {
+    try {
+      data = JSON.parse(raw);
+    } catch {
+      data = { detail: raw };
+    }
+  }
+
+  if (!response.ok) {
+    const detail = data.detail || data.message || `HTTP ${response.status}`;
+    throw new Error(`APIエラー: ${detail}`);
+  }
+
+  return data;
+}
+
+function normalizeCardId(rawId = '') {
+  if (rawId.startsWith('m')) return rawId;
+  return rawId.replace('-', '_');
+}
+
+function normalizeApiCard(apiCard = {}) {
+  const id = normalizeCardId(apiCard.id || '');
+  const localCard = fullDeck.find((c) => c.id === id || c.id === apiCard.id) || {};
+  const isReversed = Boolean(apiCard.is_reversed ?? apiCard.isReversed ?? localCard.isReversed);
+
+  return {
+    ...localCard,
+    ...apiCard,
+    id,
+    nameJp: apiCard.name_jp || apiCard.nameJp || localCard.nameJp || '',
+    isReversed,
+    keywords_up: apiCard.keywords_up || localCard.keywords_up || '',
+    keywords_rev: apiCard.keywords_rev || localCard.keywords_rev || '',
+    upright: apiCard.upright || localCard.upright || '',
+    reversed: apiCard.reversed || localCard.reversed || '',
+    suit: apiCard.suit || localCard.suit || 'major',
+  };
+}
+
+function normalizeApiAstro(raw) {
+  if (!raw || !raw.sign) return null;
+
+  const localSign = zodiacSigns.find((s) => s.name === raw.sign.name) || {};
+  return {
+    ...raw,
+    sign: {
+      ...localSign,
+      ...raw.sign,
+      tarotCard: raw.sign.tarot_card || raw.sign.tarotCard || localSign.tarotCard,
+      compatElements: localSign.compatElements || [],
+      trait: localSign.trait || '',
+      advice: raw.sign.advice || localSign.advice || '',
+      ruler: localSign.ruler || '',
+      rulerSymbol: localSign.rulerSymbol || '',
+    },
+    lunar: raw.lunar || getLunarPhase(new Date()),
+    transit: raw.transit || getCurrentTransit(),
+  };
+}
+
+function getBirthDateValue() {
+  const birthInput = document.getElementById('birthDate');
+  return birthInput && birthInput.value ? birthInput.value : null;
+}
+
+function renderDrawnCardsFromState() {
+  const container = document.getElementById('cardSpread');
+  const labels = spreadLabels[currentSpread] || [];
+  container.className = currentSpread === 10 ? 'celtic-cross-layout' : 'card-spread';
+
+  drawnCards.forEach((card, i) => {
+    const slot = document.createElement('div');
+    slot.className = 'card-slot';
+    const sc = card.suit !== 'major' ? `suit-${card.suit}` : '';
+    slot.innerHTML = `<span class="card-label">${labels[i] || ''}</span>
+<div class="card-container ${card.isReversed ? 'reversed' : ''}" onclick="flipCard(${i})" id="card-${i}">
+<div class="card-face card-back"><div class="card-back-design"><span class="card-back-pattern"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"><circle cx="24" cy="24" r="16"/><circle cx="24" cy="24" r="8"/><line x1="24" y1="8" x2="24" y2="40"/><line x1="8" y1="24" x2="40" y2="24"/><path d="M14.3,14.3 L33.7,33.7" opacity="0.5"/><path d="M33.7,14.3 L14.3,33.7" opacity="0.5"/><circle cx="24" cy="24" r="2" fill="currentColor" stroke="none"/></svg></span></div></div>
+<div class="card-face card-front ${sc}"><span class="card-numeral">${card.numeral || ''}</span><span class="card-symbol">${cardIcon(card.id)}</span><span class="card-name">${card.name || ''}</span><span class="card-name-jp">${card.nameJp || ''}</span>${card.isReversed ? '<span class="reversed-indicator">逆位置</span>' : ''}</div></div>`;
+    container.appendChild(slot);
+    setTimeout(() => slot.classList.add('appear'), i * 100 + 50);
+  });
+  document.getElementById('drawBtn').disabled = true;
+}
+
+const _origResetReadingApiBridge = resetReading;
+resetReading = function() {
+  lastSpreadSummary = '';
+  _origResetReadingApiBridge();
+};
+
+const _origGenerateSummaryApiBridge = generateSummary;
+generateSummary = function() {
+  if (lastSpreadSummary) return lastSpreadSummary;
+  return _origGenerateSummaryApiBridge();
+};
+
+const _origDrawCardsApiBridge = drawCards;
+drawCards = async function() {
+  resetReading();
+
+  const drawBtn = document.getElementById('drawBtn');
+  const originalText = drawBtn.textContent;
+  const question = document.getElementById('questionInput').value.trim();
+  drawBtn.textContent = '通信中...';
+  drawBtn.disabled = true;
+
+  try {
+    const payload = {
+      spread: spreadApiMap[currentSpread] || 'three',
+      deck_filter: 'all',
+      question,
+    };
+    const birthDate = getBirthDateValue();
+    if (birthDate) payload.birth_date = birthDate;
+
+    const response = await requestApi('/api/spread', { method: 'POST', body: payload });
+    drawnCards = (response.cards || []).map(normalizeApiCard);
+    if (!drawnCards.length) throw new Error('カード結果が取得できませんでした。');
+    lastSpreadSummary = response.summary || '';
+    renderDrawnCardsFromState();
+  } catch (err) {
+    console.error('API /api/spread failed; fallback to local draw.', err);
+    drawBtn.textContent = originalText;
+    _origDrawCardsApiBridge();
+    return;
+  }
+
+  drawBtn.textContent = originalText;
+};
+
+const _origShowDailyApiBridge = showDailyCard;
+showDailyCard = async function() {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const params = new URLSearchParams({ target_date: today });
+    const birthDate = getBirthDateValue();
+    if (birthDate) params.set('birth_date', birthDate);
+
+    const response = await requestApi(`/api/daily?${params.toString()}`);
+    const card = normalizeApiCard(response.card || {});
+    const kw = card.isReversed ? card.keywords_rev : card.keywords_up;
+    const meaning = card.isReversed ? card.reversed : card.upright;
+    const sc = card.suit !== 'major' ? `suit-${card.suit}` : '';
+    const ds = new Date().toLocaleDateString('ja-JP', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+    const lunar = response.lunar || getLunarPhase(new Date());
+    const transit = response.transit || getCurrentTransit();
+    const profile = normalizeApiAstro(response.astrology) || getAstroProfile();
+
+    let astroHtml = '';
+    if (profile) {
+      const cardLinked = card.id === profile.sign.tarotCard;
+      astroHtml = `<div style="margin-top:18px; padding-top:14px; border-top:1px solid rgba(201,168,76,0.15)">
+        <h4 style="font-size:0.82rem; color:#b8a0e0; margin-bottom:10px">✦ あなたの星からのメッセージ ✦</h4>
+        <p style="font-size:0.85rem">${profile.sign.symbol} ${profile.sign.name}のあなたにとって、今日の${card.nameJp}は${profile.sign.compatElements.includes(card.element) ? '調和的なエネルギー' : '新たな視点をもたらすエネルギー'}を運んでいます。${profile.sign.advice}</p>
+        ${cardLinked ? '<p style="font-size:0.82rem;margin-top:8px;color:var(--gold)">⭐ 星座対応カードとの共鳴が出ています。</p>' : ''}
+      </div>`;
+    }
+
+    document.getElementById('dailyDisplay').innerHTML = `<div class="daily-date">${ds}</div>
+      <div style="display:flex;justify-content:center;gap:16px;margin-bottom:16px;flex-wrap:wrap">
+        <span class="astro-badge">${lunar.symbol} ${lunar.name}</span>
+        <span class="astro-badge">♇ ${transit.planet}の影響</span>
+      </div>
+      <div style="margin:0 auto 20px;width:fit-content"><div class="card-container flipped ${card.isReversed ? 'reversed' : ''}" style="width:160px;cursor:default"><div class="card-face card-back"><div class="card-back-design"><span class="card-back-pattern"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"><circle cx="24" cy="24" r="16"/><circle cx="24" cy="24" r="8"/><line x1="24" y1="8" x2="24" y2="40"/><line x1="8" y1="24" x2="40" y2="24"/><path d="M14.3,14.3 L33.7,33.7" opacity="0.5"/><path d="M33.7,14.3 L14.3,33.7" opacity="0.5"/><circle cx="24" cy="24" r="2" fill="currentColor" stroke="none"/></svg></span></div></div><div class="card-face card-front ${sc}"><span class="card-numeral">${card.numeral || ''}</span><span class="card-symbol">${cardIcon(card.id)}</span><span class="card-name">${card.name || ''}</span><span class="card-name-jp">${card.nameJp || ''}</span>${card.isReversed ? '<span class="reversed-indicator">逆位置</span>' : ''}</div></div></div>
+      <div class="daily-message">
+        <h4>✦ 今日のメッセージ ✦</h4>
+        <p style="font-style:italic;color:var(--gold);margin-bottom:10px">${kw}</p>
+        <p>${meaning}</p>
+        <p style="margin-top:12px;font-size:0.85rem">${lunar.symbol} <strong>${lunar.name}</strong>：${lunar.meaning}</p>
+        <p style="margin-top:8px;font-size:0.85rem">🪐 <strong>${transit.planet}のトランジット</strong>：${transit.advice}</p>
+        ${astroHtml}
+        <p style="margin-top:14px;font-size:0.85rem;color:var(--text-dim)">今日一日、このカードと天体のエネルギーを意識して過ごしてみてください。</p>
+        <span class="result-detail-link" onclick="showCardDetail('${card.id}')" style="display:inline-block;margin-top:12px">カードの詳細を見る →</span>
+      </div>`;
+  } catch (err) {
+    console.error('API /api/daily failed; fallback to local daily.', err);
+    _origShowDailyApiBridge();
+  }
+};
+
+const _origYesNoApiBridge = drawYesNo;
+drawYesNo = async function() {
+  const button = document.querySelector('#panel-yesno .draw-btn');
+  const originalText = button ? button.textContent : '';
+  if (button) {
+    button.disabled = true;
+    button.textContent = '通信中...';
+  }
+
+  try {
+    const question = document.getElementById('yesnoInput').value.trim();
+    const payload = { question };
+    const birthDate = getBirthDateValue();
+    if (birthDate) payload.birth_date = birthDate;
+
+    const response = await requestApi('/api/yesno', { method: 'POST', body: payload });
+    const card = normalizeApiCard(response.card || {});
+    const meaning = card.isReversed ? card.reversed : card.upright;
+
+    const answerEn = response.answer?.en || 'Maybe';
+    const cls = response.answer?.class_name || (answerEn === 'Yes' ? 'yes' : answerEn === 'No' ? 'no' : 'maybe');
+    const jp = response.answer?.jp || (cls === 'yes' ? 'はい' : cls === 'no' ? 'いいえ' : 'どちらとも言えない');
+
+    const profile = normalizeApiAstro(response.astrology) || getAstroProfile();
+    let astroHtml = '';
+    if (profile) {
+      const lunar = profile.lunar;
+      const transit = profile.transit;
+      const cardLinked = card.id === profile.sign.tarotCard;
+      astroHtml = `<div style="margin-top:20px;padding-top:16px;border-top:1px solid rgba(201,168,76,0.15);text-align:left">
+        <div style="font-family:'Cinzel',serif;font-size:0.8rem;color:#b8a0e0;letter-spacing:0.1em;margin-bottom:10px;text-align:center">✦ 占星術的な補足 ✦</div>
+        <p style="font-size:0.85rem;line-height:1.8">${profile.sign.symbol} ${profile.sign.name}のあなたへ：${
+          cls === 'yes' ? profile.sign.advice + 'この判断はあなたの星座のエネルギーと共鳴しています。'
+          : cls === 'no' ? '今は慎重さが必要な時期かもしれません。' + transit.advice
+          : '判断を急がず、' + lunar.meaning.replace('。', '') + '時期でもあります。'
+        }</p>
+        ${cardLinked ? '<p style="font-size:0.85rem;margin-top:8px;color:var(--gold)">⭐ あなたの星座と関連するカードが出ています！星々からの特別なサインです。</p>' : ''}
+        <p style="font-size:0.8rem;color:var(--text-dim);margin-top:8px">${lunar.symbol} 月相：${lunar.name} ／ 🪐 ${transit.planet}のトランジット</p>
+      </div>`;
+    }
+
+    document.getElementById('yesnoResult').innerHTML = `<div class="yesno-result"><div style="margin-bottom:12px;display:flex;justify-content:center">${cardIcon(card.id,64)}</div><div style="font-family:'Cinzel',serif;font-size:0.9rem;color:var(--gold-light)">${card.name}</div><div style="font-size:0.95rem;margin-bottom:4px">${card.nameJp} ${card.isReversed ? '（逆位置）' : ''}</div><div class="yesno-answer ${cls}">${answerEn}</div><div style="font-size:1rem;margin-bottom:16px;color:var(--text-light)">${jp}</div><div class="yesno-detail">${question ? `「${question}」に対する答えは<strong>${jp}</strong>です。` : ''} ${meaning}</div>${astroHtml}<span class="result-detail-link" onclick="showCardDetail('${card.id}')" style="display:inline-block;margin-top:16px">カードの詳細を見る →</span></div>`;
+  } catch (err) {
+    console.error('API /api/yesno failed; fallback to local yes/no.', err);
+    _origYesNoApiBridge();
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
+  }
+};
