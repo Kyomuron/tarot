@@ -11,4 +11,5 @@ except ImportError:
 
 class Default(WorkerEntrypoint):
     async def fetch(self, request):
-        return await asgi.fetch(app, request)
+        ctx = getattr(self, "ctx", None)
+        return await asgi.fetch(app, request, self.env, ctx)
