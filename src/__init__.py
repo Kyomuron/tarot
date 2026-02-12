@@ -1,0 +1,1 @@
+"""Tarot Python worker package."""

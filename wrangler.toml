@@ -1,0 +1,8 @@
+name = "tarot-python-jp"
+main = "src/entry.py"
+compatibility_date = "2026-02-12"
+compatibility_flags = ["python_workers"]
+workers_dev = true
+
+[observability]
+enabled = true
